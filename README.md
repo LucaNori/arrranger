@@ -167,16 +167,6 @@ chmod 777 data data/arrranger.db
 docker compose -f docker-compose.local.yml up -d
 ```
 
-## Troubleshooting
-
-For common issues and their solutions, particularly with Docker deployment, please see the [TROUBLESHOOTING.md](TROUBLESHOOTING.md) guide.
-
-Common problems addressed include:
-- Database connection errors
-- Configuration file format issues
-- Permission problems
-- Docker volume mounting issues
-
 ## Contributing
 
 1. Fork the repository
