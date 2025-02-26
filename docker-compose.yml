@@ -1,0 +1,15 @@
+services:
+  arrranger:
+    image: ghcr.io/lucanori/arrranger:latest
+    container_name: arrranger
+    volumes:
+      - ./config:/config:ro
+      - ./data:/data
+    restart: unless-stopped
+    environment:
+      - TZ=Europe/Rome  # Set your timezone here
+      - CONFIG_FILE=/config/arrranger_instances.json
+      - DB_NAME=/data/arrranger.db
+    labels:
+      # Enable Watchtower, remove if not needed
+      - com.centurylinklabs.watchtower.enable=true

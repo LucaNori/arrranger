@@ -1,0 +1,19 @@
+services:
+  arrranger:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - BUILDKIT_INLINE_CACHE=0
+    container_name: arrranger-local
+    volumes:
+      - ./config:/config:ro
+      - ./data:/data
+    restart: unless-stopped
+    environment:
+      - TZ=Europe/Rome
+      - CONFIG_FILE=/config/arrranger_instances.json
+      - DB_NAME=/data/arrranger.db
+    labels:
+      # Enable Watchtower, remove if not needed
+      - com.centurylinklabs.watchtower.enable=true

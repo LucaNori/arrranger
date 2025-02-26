@@ -1,0 +1,115 @@
+{
+  "sonarr_main": {
+    "url": "http://your_sonarr_instance_url",
+    "api_key": "YOUR_SONARR_API_KEY",
+    "type": "sonarr",
+    "backup": {
+      "enabled": true,
+      "schedule": {
+        "type": "daily",
+        "time": "00:00"
+      }
+    },
+    "sync": {
+      "parent_instance": "sonarr_4k",
+      "schedule": {
+        "type": "daily",
+        "time": "02:00"
+      }
+    },
+    "filters": {
+      "quality_profiles": [
+        "1080p",
+        "720p"
+      ],
+      "root_folders": [
+        "/tv/shows",
+        "/tv/anime"
+      ],
+      "tags": [
+        "sync",
+        "backup"
+      ]
+    }
+  },
+  "sonarr_4k": {
+    "url": "http://your_4k_sonarr_url",
+    "api_key": "YOUR_4K_SONARR_API_KEY",
+    "type": "sonarr",
+    "backup": {
+      "enabled": true,
+      "schedule": {
+        "type": "weekly",
+        "time": "00:00"
+      }
+    },
+    "sync": {},
+    "filters": {
+      "quality_profiles": [
+        "4K"
+      ],
+      "root_folders": [
+        "/tv/4k-shows"
+      ],
+      "tags": [
+        "4k"
+      ]
+    }
+  },
+  "radarr_main": {
+    "url": "http://your_radarr_url",
+    "api_key": "YOUR_RADARR_API_KEY",
+    "type": "radarr",
+    "backup": {
+      "enabled": true,
+      "schedule": {
+        "type": "cron",
+        "cron": "0 0 * * *"
+      }
+    },
+    "sync": {
+      "parent_instance": "radarr_4k",
+      "schedule": {
+        "type": "daily",
+        "time": "03:00"
+      }
+    },
+    "filters": {
+      "quality_profiles": [
+        "1080p"
+      ],
+      "root_folders": [
+        "/movies/1080p"
+      ],
+      "tags": [
+        "sync"
+      ]
+    }
+  },
+  "radarr_4k": {
+    "url": "http://your_4k_radarr_url",
+    "api_key": "YOUR_4K_RADARR_API_KEY",
+    "type": "radarr",
+    "backup": {
+      "enabled": true,
+      "schedule": {
+        "type": "monthly",
+        "time": "00:00"
+      }
+    },
+    "sync": {},
+    "filters": {
+      "quality_profiles": [
+        "4K HDR",
+        "4K SDR"
+      ],
+      "root_folders": [
+        "/movies/4k"
+      ],
+      "tags": [
+        "4k",
+        "hdr"
+      ]
+    }
+  }
+}
