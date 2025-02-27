@@ -14,6 +14,3 @@ services:
       - TZ=Europe/Rome
       - CONFIG_FILE=/config/arrranger_instances.json
       - DB_NAME=/data/arrranger.db
-    labels:
-      # Enable Watchtower, remove if not needed
-      - com.centurylinklabs.watchtower.enable=true

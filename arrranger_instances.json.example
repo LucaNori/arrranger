@@ -6,31 +6,13 @@
     "backup": {
       "enabled": true,
       "schedule": {
-        "type": "daily",
-        "time": "00:00"
+        "type": "cron",
+        "cron": "0 * * * *"
       }
     },
-    "sync": {
-      "parent_instance": "sonarr_4k",
-      "schedule": {
-        "type": "daily",
-        "time": "02:00"
-      }
+    "sync": {}
     },
-    "filters": {
-      "quality_profiles": [
-        "1080p",
-        "720p"
-      ],
-      "root_folders": [
-        "/tv/shows",
-        "/tv/anime"
-      ],
-      "tags": [
-        "sync",
-        "backup"
-      ]
-    }
+    "filters": {}
   },
   "sonarr_4k": {
     "url": "http://your_4k_sonarr_url",
@@ -39,18 +21,18 @@
     "backup": {
       "enabled": true,
       "schedule": {
-        "type": "weekly",
-        "time": "00:00"
+        "type": "cron",
+        "cron": "00:00"
       }
     },
-    "sync": {},
+    "sync": {
+      "parent_instance": "sonarr_main",
+      "schedule": {
+        "type": "cron",
+        "cron": "*/5 * * * *"
+      }
+    },
     "filters": {
-      "quality_profiles": [
-        "4K"
-      ],
-      "root_folders": [
-        "/tv/4k-shows"
-      ],
       "tags": [
         "4k"
       ]
@@ -64,25 +46,16 @@
       "enabled": true,
       "schedule": {
         "type": "cron",
-        "cron": "0 0 * * *"
+        "cron": "0 * * * *"
       }
     },
-    "sync": {
-      "parent_instance": "radarr_4k",
-      "schedule": {
-        "type": "daily",
-        "time": "03:00"
-      }
-    },
+    "sync": {},
     "filters": {
       "quality_profiles": [
         "1080p"
       ],
       "root_folders": [
         "/movies/1080p"
-      ],
-      "tags": [
-        "sync"
       ]
     }
   },
@@ -91,24 +64,19 @@
     "api_key": "YOUR_4K_RADARR_API_KEY",
     "type": "radarr",
     "backup": {
-      "enabled": true,
+      "enabled": false,
+    },
+    "sync": {
+      "parent_instance": "radarr_main",
       "schedule": {
-        "type": "monthly",
-        "time": "00:00"
+        "type": "cron",
+        "cron": "0 0 * * *"
       }
     },
-    "sync": {},
     "filters": {
       "quality_profiles": [
         "4K HDR",
         "4K SDR"
-      ],
-      "root_folders": [
-        "/movies/4k"
-      ],
-      "tags": [
-        "4k",
-        "hdr"
       ]
     }
   }
