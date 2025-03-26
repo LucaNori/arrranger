@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
 from croniter import croniter
 from arrranger_logging import log_backup_operation, log_sync_operation
+import time
 
 CONFIG_FILE = os.environ.get("CONFIG_FILE", "arrranger_instances.json")
 DB_NAME = os.environ.get("DB_NAME", "arrranger.db")
@@ -348,6 +349,36 @@ class DatabaseManager:
             conn.rollback()
             return 0
         finally:
+            conn.close()
+
+    def get_release_history(self, instance_db_id: int) -> List[Dict[str, Any]]:
+        """Retrieve all release history records for a given instance ID."""
+        conn = self.connect()
+        cursor = conn.cursor()
+        results = []
+        try:
+            cursor.execute("""
+                SELECT 
+                    id, instance_id, media_type, media_item_id, history_event_id, 
+                    event_type, date, source_title, indexer, download_client, 
+                    guid, info_hash, download_id, quality_json, 
+                    custom_formats_json, custom_format_score, backup_date
+                FROM ReleaseHistory 
+                WHERE instance_id = ? 
+                ORDER BY date DESC
+            """, (instance_db_id,))
+            
+            columns = [description[0] for description in cursor.description]
+            for row in cursor.fetchall():
+                results.append(dict(zip(columns, row)))
+            
+            return results
+        except sqlite3.Error as e:
+            print(f"Database error retrieving release history for instance ID {instance_db_id}: {e}")
+            return [] # Return empty list on error
+        finally:
+            conn.close()
+
             conn.close()
 
 
@@ -995,6 +1026,250 @@ class MediaServerManager:
                 
         return success, added_count, removed_count, skipped_count
 
+    def fetch_indexers(self, instance_name: str) -> Optional[List[Dict[str, Any]]]:
+        """Fetch indexer configuration from a server instance."""
+        instance_config = self.instances.get(instance_name)
+        if not instance_config:
+            print(f"Error: Instance {instance_name} not found.")
+            return None
+        
+        headers = {"X-Api-Key": instance_config["api_key"]}
+        try:
+            response = requests.get(
+                f"{instance_config['url']}/api/v3/indexer",
+                headers=headers,
+                timeout=30
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            print(f"HTTP error fetching indexers from {instance_name}: {e}")
+            return None
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching indexers from {instance_name}: {e}")
+            return None
+
+
+    def get_movie_details(self, instance_name: str, radarr_movie_id: int) -> Optional[Dict[str, Any]]:
+        """Fetch details for a specific movie from a Radarr instance using its internal ID."""
+        instance_config = self.instances.get(instance_name)
+        if not instance_config or instance_config['type'] != 'radarr':
+            print(f"Error: Radarr instance {instance_name} not found or invalid type.")
+            return None
+        
+        headers = {"X-Api-Key": instance_config["api_key"]}
+        try:
+            # Fetch full details using the internal ID
+            details_response = requests.get(
+                f"{instance_config['url']}/api/v3/movie/{radarr_movie_id}",
+                headers=headers,
+                timeout=30
+            )
+            details_response.raise_for_status()
+            return details_response.json()
+            
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                 # Movie ID might exist from lookup but details fail (unlikely but possible)
+                 return None
+            print(f"HTTP error fetching movie details (Radarr ID: {radarr_movie_id}) from {instance_name}: {e}")
+            return None
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching movie details (Radarr ID: {radarr_movie_id}) from {instance_name}: {e}")
+            return None
+
+    def restore_releases_from_history(self, instance_name: str):
+        """Attempts to redownload missing media files based on stored release history."""
+        print(f"Starting release restore process for instance: {instance_name}")
+        instance_config = self.instances.get(instance_name)
+        if not instance_config:
+            print(f"Error: Instance {instance_name} not found.")
+            return
+
+        instance_db_id = self.db_manager.get_or_create_instance_id(instance_name)
+        if instance_db_id is None:
+            print(f"Error: Could not get database ID for instance {instance_name}.")
+            return
+
+        # 1. Fetch required data
+        print("Fetching release history from database...")
+        history_records = self.db_manager.get_release_history(instance_db_id)
+        if not history_records:
+            print("No release history found in database for this instance.")
+            return
+
+        print("Fetching current indexers from instance...")
+        current_indexers = self.fetch_indexers(instance_name)
+        if current_indexers is None:
+            print("Failed to fetch current indexers. Aborting restore.")
+            return
+
+        print("Fetching current download clients from instance...")
+        current_clients = self.fetch_download_clients(instance_name)
+        if current_clients is None:
+            print("Failed to fetch current download clients. Aborting restore.")
+            return
+
+        # 2. Build Mappings (Simple name-based for now, might need refinement)
+        indexer_map = {idx.get('name'): idx.get('id') for idx in current_indexers if idx.get('name') and idx.get('id')}
+        client_map = {client.get('name'): client.get('id') for client in current_clients if client.get('name') and client.get('id')}
+
+        # 3. Process History Records
+        restored_count = 0
+        skipped_count = 0
+        error_count = 0
+        total_history = len(history_records)
+        print(f"Processing {total_history} history records...")
+
+        headers = {"X-Api-Key": instance_config["api_key"]}
+
+        for i, record in enumerate(history_records):
+            print(f"Processing record {i+1}/{total_history}: {record.get('source_title')}", end='\r')
+            media_type = record.get('media_type')
+            media_item_id = record.get('media_item_id') # This is the Sonarr/Radarr internal ID
+            guid = record.get('guid')
+            indexer_name = record.get('indexer')
+            client_name = record.get('download_client')
+            source_title = record.get('source_title')
+
+            if not guid or not indexer_name or not media_type or not media_item_id:
+                # print(f"Skipping record {record.get('id')}: Missing crucial data (GUID, indexer, type, or media ID).")
+                skipped_count += 1
+                continue
+
+            # Check if media item still exists and needs file
+            item_details = None
+            has_file = True # Assume it has a file unless proven otherwise
+            if media_type == 'movie':
+                item_details = self.get_movie_details(instance_name, media_item_id)
+                if item_details:
+                    has_file = item_details.get('hasFile', True)
+                else:
+                    # Movie doesn't exist in Radarr anymore
+                    skipped_count += 1
+                    continue
+            elif media_type == 'episode':
+                item_details = self.get_episode_details(instance_name, media_item_id)
+                if item_details:
+                    has_file = item_details.get('hasFile', True)
+                else:
+                    # Episode doesn't exist in Sonarr anymore
+                    # print(f"Skipping record {record.get('id')}: Episode ID {media_item_id} not found in Sonarr.")
+                    skipped_count += 1
+                    continue
+            
+            if has_file:
+                # print(f"Skipping record {record.get('id')}: Media item already has a file.")
+                skipped_count += 1
+                continue
+
+            # Map indexer and client
+            target_indexer_id = indexer_map.get(indexer_name)
+            target_client_id = client_map.get(client_name) # Optional, Sonarr/Radarr might pick default
+
+            if not target_indexer_id:
+                # print(f"Skipping record {record.get('id')}: Indexer '{indexer_name}' not found or inactive in current config.")
+                skipped_count += 1
+                continue
+
+            # Construct payload for POST /api/v3/release
+            payload = {
+                "guid": guid,
+                "indexerId": target_indexer_id,
+                "title": source_title
+                # "downloadClientId": target_client_id, # Often optional
+            }
+
+            # Attempt to trigger download
+            try:
+                response = requests.post(
+                    f"{instance_config['url']}/api/v3/release",
+                    headers=headers,
+                    json=payload,
+                    timeout=30
+                )
+                response.raise_for_status()
+                # API returns 200 OK on success, sometimes with the release if immediately processed,
+                # or if it was added to queue. We consider 2xx successful.
+                print(f"\nSuccessfully triggered redownload for: {source_title}")
+                restored_count += 1
+            except requests.exceptions.HTTPError as e:
+                # Handle specific errors, e.g., 400 Bad Request might mean release not found by GUID
+                error_body = ""
+                try:
+                    error_body = e.response.json()
+                except:
+                    error_body = e.response.text
+                print(f"\nHTTP error triggering download for {source_title} (GUID: {guid}): {e} - {error_body}")
+                error_count += 1
+            except requests.exceptions.RequestException as e:
+                print(f"\nError triggering download for {source_title} (GUID: {guid}): {e}")
+                error_count += 1
+            
+            # Optional: Add a small delay to avoid hammering APIs
+            time.sleep(0.5)
+
+        print(f"\nRelease restore process finished for {instance_name}.")
+        print(f"Summary: Attempted: {total_history}, Triggered: {restored_count}, Skipped: {skipped_count}, Errors: {error_count}")
+
+
+    def get_episode_details(self, instance_name: str, episode_id: int) -> Optional[Dict[str, Any]]:
+        """Fetch details for a specific episode from a Sonarr instance using its ID."""
+        instance_config = self.instances.get(instance_name)
+        if not instance_config or instance_config['type'] != 'sonarr':
+            print(f"Error: Sonarr instance {instance_name} not found or invalid type.")
+            return None
+
+        headers = {"X-Api-Key": instance_config["api_key"]}
+        try:
+            response = requests.get(
+                f"{instance_config['url']}/api/v3/episode/{episode_id}",
+                headers=headers,
+                timeout=30
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                 # Episode not found in Sonarr instance
+                 return None
+            print(f"HTTP error fetching episode details (ID: {episode_id}) from {instance_name}: {e}")
+            return None
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching episode details (ID: {episode_id}) from {instance_name}: {e}")
+            return None
+
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            print(f"HTTP error fetching indexers from {instance_name}: {e}")
+            return None
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching indexers from {instance_name}: {e}")
+            return None
+
+    def fetch_download_clients(self, instance_name: str) -> Optional[List[Dict[str, Any]]]:
+        """Fetch download client configuration from a server instance."""
+        instance_config = self.instances.get(instance_name)
+        if not instance_config:
+            print(f"Error: Instance {instance_name} not found.")
+            return None
+        
+        headers = {"X-Api-Key": instance_config["api_key"]}
+        try:
+            response = requests.get(
+                f"{instance_config['url']}/api/v3/downloadclient",
+                headers=headers,
+                timeout=30
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            print(f"HTTP error fetching download clients from {instance_name}: {e}")
+            return None
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching download clients from {instance_name}: {e}")
+            return None
+
     def sync_shows_to_sonarr(self, parent_shows: List[Dict[str, Any]], child_shows: List[Dict[str, Any]],
                            dest_config: Dict[str, Any], filters: Dict[str, Any]) -> Tuple[bool, int, int, int]:
         """
@@ -1186,9 +1461,10 @@ def main():
         print("4. Perform manual sync")
         print("5. Restore from backup")
         print("6. View configured instances")
-        print("7. Exit")
+        print("7. Restore Releases from History")
+        print("8. Exit")
         
-        choice = input("Enter your choice (1-7): ")
+        choice = input("Enter your choice (1-8): ")
 
         if choice == '1':
             name = input("Enter a name for the instance: ")
@@ -1406,10 +1682,32 @@ def main():
                             print(f"  {filter_name}: {filter_value}")
 
         elif choice == '7':
+            if not manager.instances:
+                print("No instances configured.")
+                continue
+            
+            print("\nSelect instance to restore releases for:")
+            instance_list = list(manager.instances.keys())
+            for i, name in enumerate(instance_list, 1):
+                print(f"{i}. {name}")
+            
+            try:
+                idx_input = int(input(f"Enter instance number (1-{len(instance_list)}): "))
+                idx = idx_input - 1
+                if 0 <= idx < len(instance_list):
+                    instance_name = instance_list[idx]
+                    print(f"\nStarting restore process for {instance_name}. This may take a while...")
+                    manager.restore_releases_from_history(instance_name)
+                else:
+                    print("Invalid instance number.")
+            except ValueError:
+                print("Invalid input. Please enter a number.")
+
+        elif choice == '8': # Adjusted from 7 to 8
             break
 
         else:
-            print("Invalid choice. Please enter a number between 1 and 7.")
+            print("Invalid choice. Please enter a number between 1 and 8.")
 
 if __name__ == "__main__":
     main()
