@@ -57,6 +57,44 @@ class MediaServerScheduler:
                 )
 
                 print(f"Backup completed for {instance_name}: {current_count} {media_type}s, {added_count} added, {removed_count} removed")
+
+                # --- Add Release History Backup Logic ---
+                if instance_config.get("backup_release_history", False):
+                    print(f"Starting release history backup for {instance_name}...")
+                    instance_db_id = self.manager.db_manager.get_or_create_instance_id(instance_name)
+                    
+                    if instance_db_id is None:
+                        print(f"Error: Could not get or create database ID for instance {instance_name}. Skipping history backup.")
+                    else:
+                        history_added_count = 0
+                        history_error_count = 0
+                        for media_item in media_data:
+                            media_item_internal_id = media_item.get('id') # Sonarr/Radarr internal ID
+                            if media_item_internal_id is None:
+                                continue 
+                            
+                            try:
+                                # Use the manager instance to call fetch_history_for_media
+                                history_data = self.manager.fetch_history_for_media(instance_name, instance_config, media_type, media_item_internal_id)
+                                if history_data:
+                                    # Use the manager's db_manager instance
+                                    added = self.manager.db_manager.save_release_history(
+                                        instance_name, 
+                                        instance_db_id, 
+                                        media_type, 
+                                        media_item_internal_id, 
+                                        history_data
+                                    )
+                                    history_added_count += added
+                            except Exception as hist_e:
+                                print(f"Error fetching/saving history for {media_type} ID {media_item_internal_id}: {hist_e}")
+                                history_error_count += 1
+                        
+                        print(f"Release history backup for {instance_name} finished: {history_added_count} records added.")
+                        if history_error_count > 0:
+                            print(f"Warning: Encountered {history_error_count} errors during history backup.")
+                # --- End Release History Backup Logic ---
+
             else:
                 log_backup_operation(
                     instance_name=instance_name,

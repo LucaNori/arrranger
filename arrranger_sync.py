@@ -25,6 +25,14 @@ class DatabaseManager:
         cursor = conn.cursor()
 
         cursor.execute("""
+            CREATE TABLE IF NOT EXISTS instances (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL
+            )
+        """)
+
+
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS movies (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 radarr_instance TEXT,
@@ -54,6 +62,33 @@ class DatabaseManager:
             )
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ReleaseHistory (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                instance_id INTEGER NOT NULL,
+                media_type TEXT NOT NULL, -- 'movie' or 'episode'
+                media_item_id INTEGER NOT NULL, -- Corresponds to movie.id or episode.id
+                history_event_id INTEGER NOT NULL, -- Original history ID from Sonarr/Radarr
+                event_type TEXT NOT NULL,
+                date TEXT NOT NULL, -- ISO 8601 format
+                source_title TEXT,
+                indexer TEXT,
+                download_client TEXT,
+                guid TEXT,
+                info_hash TEXT,
+                download_id TEXT,
+                quality_json TEXT, -- JSON representation of QualityModel
+                custom_formats_json TEXT, -- JSON array of CustomFormatResource
+                custom_format_score INTEGER,
+                backup_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (instance_id) REFERENCES instances(id), -- Assuming an 'instances' table exists or will exist
+                UNIQUE (instance_id, history_event_id) -- Prevent duplicate history entries per instance
+            )
+        """)
+
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_releasehistory_instance_media ON ReleaseHistory (instance_id, media_type, media_item_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_releasehistory_event ON ReleaseHistory (instance_id, history_event_id)")
+
         conn.commit()
         conn.close()
 
@@ -65,6 +100,27 @@ class DatabaseManager:
         table = "movies" if media_type == "movie" else "shows"
         instance_field = "radarr_instance" if media_type == "movie" else "sonarr_instance"
         
+
+    def get_or_create_instance_id(self, instance_name: str) -> Optional[int]:
+        """Get the database ID for an instance name, creating it if it doesn't exist."""
+        conn = self.connect()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT id FROM instances WHERE name = ?", (instance_name,))
+            result = cursor.fetchone()
+            if result:
+                return result[0]
+            else:
+                cursor.execute("INSERT INTO instances (name) VALUES (?)", (instance_name,))
+                conn.commit()
+                return cursor.lastrowid
+        except sqlite3.Error as e:
+            print(f"Database error getting/creating instance ID for {instance_name}: {e}")
+            conn.rollback()
+            return None
+        finally:
+            conn.close()
+
         try:
             cursor.execute(f"SELECT COUNT(*) FROM {table} WHERE {instance_field} = ?", (instance_name,))
             return cursor.fetchone()[0]
@@ -232,6 +288,71 @@ class DatabaseManager:
         finally:
             conn.close()
 
+    def save_release_history(self, instance_name: str, instance_db_id: int, media_type: str, media_item_id: int, history_data: List[Dict[str, Any]]) -> int:
+        """Save release history records to the database, ignoring duplicates."""
+        conn = self.connect()
+        cursor = conn.cursor()
+        added_count = 0
+
+        # Define relevant event types to store
+        relevant_event_types = {'grabbed', 'downloadFolderImported'}
+
+        try:
+            for record in history_data:
+                event_type = record.get('eventType')
+                if event_type not in relevant_event_types:
+                    continue
+
+                history_event_id = record.get('id')
+                if history_event_id is None:
+                    continue # Skip records without an ID
+
+                data_dict = record.get('data', {})
+                quality_json = json.dumps(record.get('quality')) if record.get('quality') else None
+                custom_formats_json = json.dumps(record.get('customFormats')) if record.get('customFormats') else None
+
+                # Note: Using instance_db_id which needs to be passed correctly
+                cursor.execute("""
+                    INSERT OR IGNORE INTO ReleaseHistory
+                    (instance_id, media_type, media_item_id, history_event_id, event_type, 
+                     date, source_title, indexer, download_client, guid, info_hash, 
+                     download_id, quality_json, custom_formats_json, custom_format_score, backup_date)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """, (
+                    instance_db_id, # Use the passed instance ID
+                    media_type,
+                    media_item_id,
+                    history_event_id,
+                    event_type,
+                    record.get('date'),
+                    record.get('sourceTitle'),
+                    data_dict.get('indexer'),
+                    data_dict.get('downloadClient'),
+                    data_dict.get('guid'),
+                    data_dict.get('infoHash'),
+                    data_dict.get('downloadId'),
+                    quality_json,
+                    custom_formats_json,
+                    record.get('customFormatScore')
+                ))
+                added_count += cursor.rowcount
+            
+            conn.commit()
+            return added_count
+        except sqlite3.Error as e:
+            print(f"Database error saving release history for {instance_name}: {e}")
+            conn.rollback() # Rollback on error
+            return 0 # Indicate failure or partial success
+        except json.JSONDecodeError as e:
+            print(f"JSON error processing history data for {instance_name}: {e}")
+            conn.rollback()
+            return 0
+        finally:
+            conn.close()
+
+
+# End of DatabaseManager class
+
 class MediaServerManager:
     def __init__(self):
         self.db_manager = DatabaseManager()
@@ -388,7 +509,6 @@ class MediaServerManager:
                 log_backup_operation(
                     instance_name=instance_name,
                     success=True,
-                    media_type=media_type,
                     media_count=current_count,
                     prev_media_count=previous_count,
                     added_count=added_count,
@@ -397,6 +517,43 @@ class MediaServerManager:
                 
                 print(f"Manual backup of {instance_name} completed successfully: "
                       f"{current_count} {media_type}s, {added_count} added, {removed_count} removed")
+
+                # --- Add Release History Backup Logic ---
+                if instance.get("backup_release_history", False):
+                    print(f"Starting release history backup for {instance_name}...")
+                    instance_db_id = self.db_manager.get_or_create_instance_id(instance_name)
+                    
+                    if instance_db_id is None:
+                        print(f"Error: Could not get or create database ID for instance {instance_name}. Skipping history backup.")
+                    else:
+                        history_added_count = 0
+                        history_error_count = 0
+                        for media_item in media_data:
+                            media_item_internal_id = media_item.get('id') # Sonarr/Radarr internal ID
+                            if media_item_internal_id is None:
+                                continue
+                            
+                            try:
+                                history_data = self.fetch_history_for_media(instance_name, instance, media_type, media_item_internal_id)
+                                if history_data:
+                                    # Pass the correct instance_db_id and media_item_internal_id
+                                    added = self.db_manager.save_release_history(
+                                        instance_name, # Keep for logging within save method if needed
+                                        instance_db_id,
+                                        media_type,
+                                        media_item_internal_id,
+                                        history_data
+                                    )
+                                    history_added_count += added
+                            except Exception as hist_e:
+                                print(f"Error fetching/saving history for {media_type} ID {media_item_internal_id}: {hist_e}")
+                                history_error_count += 1
+                        
+                        print(f"Release history backup for {instance_name} finished: {history_added_count} records added.")
+                        if history_error_count > 0:
+                            print(f"Warning: Encountered {history_error_count} errors during history backup.")
+                # --- End Release History Backup Logic ---
+
                 return True
             
             log_backup_operation(
@@ -558,6 +715,7 @@ class MediaServerManager:
                     backup_media, dest_media, dest, dest.get("filters", {})
                 )
             
+            
             log_sync_operation(
                 parent_instance=backup_instance_name,
                 child_instance=dest_name,
@@ -573,7 +731,6 @@ class MediaServerManager:
             
             return success
         except Exception as e:
-            error_msg = str(e)
             log_sync_operation(
                 parent_instance=backup_instance_name,
                 child_instance=dest_name,
@@ -604,6 +761,31 @@ class MediaServerManager:
             )
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 401:
+                print(f"Authentication error for {instance_name}: Invalid API key or insufficient permissions")
+
+    def fetch_history_for_media(self, instance_name: str, instance_config: Dict[str, Any], media_type: str, media_item_id: int) -> Optional[List[Dict[str, Any]]]:
+        """Fetch history records for a specific media item from a server instance."""
+        headers = {"X-Api-Key": instance_config["api_key"]}
+        api_endpoint = "movie" if media_type == "movie" else "series"
+        query_param = "movieId" if media_type == "movie" else "seriesId"
+        
+        try:
+            response = requests.get(
+                f"{instance_config['url']}/api/v3/history/{api_endpoint}?{query_param}={media_item_id}",
+                headers=headers,
+                timeout=30
+            )
+            response.raise_for_status()
+            # Consider filtering for relevant event types like 'grabbed' here if API returns too much
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            print(f"HTTP error fetching history for {media_type} ID {media_item_id} from {instance_name}: {e}")
+            return None 
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching history for {media_type} ID {media_item_id} from {instance_name}: {e}")
+            return None
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 401:
                 print(f"Authentication error for {instance_name}: Invalid API key or insufficient permissions")

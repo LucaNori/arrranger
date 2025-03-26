@@ -3,6 +3,7 @@
     "url": "http://your_sonarr_instance_url",
     "api_key": "YOUR_SONARR_API_KEY",
     "type": "sonarr",
+    "backup_release_history": false,
     "backup": {
       "enabled": true,
       "schedule": {
@@ -10,19 +11,19 @@
         "cron": "0 * * * *"
       }
     },
-    "sync": {}
-    },
+    "sync": {},
     "filters": {}
   },
   "sonarr_4k": {
     "url": "http://your_4k_sonarr_url",
     "api_key": "YOUR_4K_SONARR_API_KEY",
     "type": "sonarr",
+    "backup_release_history": false,
     "backup": {
       "enabled": true,
       "schedule": {
         "type": "cron",
-        "cron": "00:00"
+        "cron": "25,40 * * * *"
       }
     },
     "sync": {
@@ -42,6 +43,7 @@
     "url": "http://your_radarr_url",
     "api_key": "YOUR_RADARR_API_KEY",
     "type": "radarr",
+    "backup_release_history": false,
     "backup": {
       "enabled": true,
       "schedule": {
@@ -63,6 +65,7 @@
     "url": "http://your_4k_radarr_url",
     "api_key": "YOUR_4K_RADARR_API_KEY",
     "type": "radarr",
+    "backup_release_history": false,
     "backup": {
       "enabled": false,
     },
