@@ -1,3 +1,11 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# dependencies = [
+# "requests",
+# "croniter",
+# "schedule",
+# ]
+# ///
 import sqlite3
 import requests
 import json

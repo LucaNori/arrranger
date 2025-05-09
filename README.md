@@ -17,12 +17,20 @@ a simple and automatic configuration-based tool to back up or synchronize media 
   4. perform manual sync
   5. restore from a backup
   6. view configured instances
+  7. restore releases from history (Experimental)
+  8. exit
 
 ### automatic operations
 
 - all automations are defined in the configuration file (`arrranger_instances.json`). from this file, you can:
   - schedule backups for multiple instances using cron expressions
   - schedule synchronization from a parent instance to a child instance, mirroring the parent's media library items on the child instance
+
+
+### Release History Backup & Restore (Experimental)
+
+- **Backup Release Details:** Optionally back up detailed information about the specific release file downloaded for each media item (including release title, indexer, GUID/hash).
+- **Restore Specific Releases:** Attempt to redownload the *exact* same releases based on the backed-up history if media files are lost. This requires the release to still be available on the indexer.
 
 the primary goal of Arrranger is to allow for a set-and-forget configuration, ensuring that your media library data can be easily restored if any of your instances encounter problems
 
@@ -65,6 +73,8 @@ the program uses a JSON configuration file (`arrranger_instances.json`) to store
 #### backup settings
 
 - `enabled`: indicates whether automatic backups are enabled (boolean: `true` or `false`)
+- `backup_release_history`: (optional, boolean: `true` or `false`, default: `false`) If `true`, backs up detailed information about downloaded releases (indexer, GUID, etc.) to enable the experimental 'Restore Releases from History' feature.
+
 - `schedule`: (optional if backups are disabled)
   - `type`: "cron" (currently, only "cron" is supported)
   - `cron`: a quoted string representing a cron expression
