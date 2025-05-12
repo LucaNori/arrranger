@@ -1,0 +1,32 @@
+services:
+  # Radarr service for movie management testing
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: test-radarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    volumes:
+      - ./radarr/config:/config
+      - ./media/movies:/movies
+      - ./downloads:/downloads
+    ports:
+      - "7878:7878"
+    restart: unless-stopped
+
+  # Sonarr service for TV show management testing
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: test-sonarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    volumes:
+      - ./sonarr/config:/config
+      - ./media/tv:/tv
+      - ./downloads:/downloads
+    ports:
+      - "8989:8989"
+    restart: unless-stopped

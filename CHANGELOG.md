@@ -5,6 +5,23 @@ All notable changes to the Arrranger project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2025-05-10
+
+### Added
+- Release history backup functionality for Sonarr/Radarr instances
+- Release history restore functionality to redownload missing media files
+- DatabaseManager class for SQLite database interactions
+- Support for storing media instances, detailed records, and release history
+- New option in the CLI for manual release history restoration
+- Switch to `uv` for dependency management and virtual environment setup
+
+### Changed
+- Changed project license from MIT to GNU General Public License Version 3
+- Revamped Docker build process to clone the repository during build
+- Updated entrypoint.sh to handle timezone configuration and auto-copy default configuration
+- Modified Docker Compose files to set correct permissions for volumes
+- Streamlined container packaging for distribution from external repository
+
 ## [1.0.1] - 2025-02-27
 
 ### Added
@@ -58,9 +75,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documentation
   - User guide in README.md
   - Developer guide in DEVELOPER_GUIDE.md
-
-### Changed
-- None (initial release)
-
-### Fixed
-- None (initial release)

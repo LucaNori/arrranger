@@ -10,4 +10,4 @@ if [ ! -f "$CONFIG_FILE" ]; then
   cp /app/arrranger_instances.json.example "$CONFIG_FILE"
 fi
 
-exec uv run arrranger_sync.py "$@"
+exec uv run main.py "$@"

@@ -1,195 +1,233 @@
 # Arrranger
 
-a simple and automatic configuration-based tool to back up or synchronize media items (not media files) between multiple Radarr and Sonarr instances
+A robust tool for backing up and synchronizing media items between multiple Radarr and Sonarr instances.
 
-## features
+## Overview
 
-### simple to backup
+Arrranger is a configuration-based utility designed to simplify the management of multiple media server instances. It provides automated backup and synchronization capabilities for Radarr and Sonarr, ensuring that your media library data is preserved and can be easily restored or replicated across instances.
 
-- utilizes only two primary files: the configuration file (for automations) and the SQLite database (for backups and synchronization)
+## Features
 
-### manual operations
+### Core Functionality
 
-- you retain full control of the script. scheduling is optional and you can run manual operations as needed. to access the interactive menu in the container, execute: `docker exec -it your_container_name python arrranger_sync.py`. This menu allows you to:
-  1. add a new media server instance
-  2. remove a media server instance
-  3. perform manual backup
-  4. perform manual sync
-  5. restore from a backup
-  6. view configured instances
-  7. restore releases from history (Experimental)
-  8. exit
+- **Database Backups**: Store media library data in a local SQLite database
+- **Instance Synchronization**: Mirror media libraries between Radarr/Sonarr instances
+- **Release History Tracking**: Optionally back up detailed release information
+- **Scheduled Operations**: Automate backups and syncs using cron expressions
+- **Filtering Options**: Selectively sync media based on quality profiles, folders, or tags
 
-### automatic operations
+### Operation Modes
 
-- all automations are defined in the configuration file (`arrranger_instances.json`). from this file, you can:
-  - schedule backups for multiple instances using cron expressions
-  - schedule synchronization from a parent instance to a child instance, mirroring the parent's media library items on the child instance
+- **Interactive CLI**: Manage instances, perform manual operations, and view configurations
+- **Scheduler**: Run automated backups and syncs based on configured schedules
+- **Restoration**: Restore media libraries from backups or attempt to redownload specific releases
 
+## Project Structure
 
-### Release History Backup & Restore (Experimental)
+```
+arrranger/
+├── docs/             # Documentation files
+├── src/              # Source code
+│   ├── __init__.py
+│   ├── arrranger_logging.py    # Logging functionality
+│   ├── arrranger_scheduler.py  # Scheduling functionality
+│   └── arrranger_sync.py       # Core sync and backup functionality
+├── test/             # Test files
+│   ├── __init__.py
+│   ├── conftest.py
+│   ├── docker-compose.test.yml # Test environment configuration
+│   ├── test_arrranger_logging.py
+│   ├── test_arrranger_scheduler.py
+│   ├── test_arrranger_sync.py
+│   └── test_integration.py
+├── main.py           # Application entry point
+├── pyproject.toml    # Project configuration and dependencies
+├── README.md
+└── uv.lock           # Dependency lock file
+```
 
-- **Backup Release Details:** Optionally back up detailed information about the specific release file downloaded for each media item (including release title, indexer, GUID/hash).
-- **Restore Specific Releases:** Attempt to redownload the *exact* same releases based on the backed-up history if media files are lost. This requires the release to still be available on the indexer.
+## Installation
 
-the primary goal of Arrranger is to allow for a set-and-forget configuration, ensuring that your media library data can be easily restored if any of your instances encounter problems
+### Prerequisites
 
-## upcoming features
+- Python 3.8 or higher
+- `uv` for dependency management (recommended)
+- Docker (optional, for running tests or containerized deployment)
 
-### advanced filtering (experimental - i advise not to use this feature!)
+### Installing with uv
 
-- **quality profile filtering**:
-  - synchronize or back up only media with specific quality profiles
-  - example: only synchronize 1080p content, excluding 4K content
-- **root folder filtering**:
-  - filter media based on their storage location
-  - example: only synchronize media from specific folders
-- **tag-based filtering**:
-  - use tags tags to easily manage which media is synchronized or backed up
-  - example: only synchronize media tagged with "sync" or "backup"
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/arrranger.git
+   cd arrranger
+   ```
 
-### custom rules when adding media (synchronization-related features)
+2. Install dependencies using uv:
+   ```bash
+   uv pip install -e .
+   ```
 
-- specify the root folder in which synchronized media items will be added
-- define the quality profile to be applied to new media items added via synchronization
+   For development dependencies:
+   ```bash
+   uv pip install -e ".[dev]"
+   ```
 
-### lidarr support
+### Manual Installation
 
-- future support for Lidarr instances
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/arrranger.git
+   cd arrranger
+   ```
 
-## configuration
+2. Install dependencies:
+   ```bash
+   pip install -e .
+   ```
 
-the program uses a JSON configuration file (`arrranger_instances.json`) to store instance settings. by default, this file should be placed in the `config` directory. a comprehensive example configuration is available in [arrranger_instances.json.example](arrranger_instances.json.example)
+   For development dependencies:
+   ```bash
+   pip install -e ".[dev]"
+   ```
 
-### configuration options
+## Usage
 
-#### instance settings
+### Running the Application
 
-- `name`: a unique identifier for the instance
-- `url`: the base URL of the radarr/sonarr instance
-- `api_key`: the API key for authentication
-- `type`: either "radarr" or "sonarr"
+To start the application using the main entry point:
 
-#### backup settings
+```bash
+python main.py
+```
 
-- `enabled`: indicates whether automatic backups are enabled (boolean: `true` or `false`)
-- `backup_release_history`: (optional, boolean: `true` or `false`, default: `false`) If `true`, backs up detailed information about downloaded releases (indexer, GUID, etc.) to enable the experimental 'Restore Releases from History' feature.
+### Interactive CLI
 
-- `schedule`: (optional if backups are disabled)
-  - `type`: "cron" (currently, only "cron" is supported)
-  - `cron`: a quoted string representing a cron expression
+For interactive management of media server instances:
 
-#### sync settings (optional)
+```bash
+python -m src.arrranger_sync
+```
 
-- `parent_instance`: the name of the parent instance to synchronize from
-- `schedule`: same format as the backup schedule
-  - `type`: "cron"
-  - `cron`: cron expression
+This provides a menu with the following options:
+1. Add a new media server instance
+2. Remove a media server instance
+3. Perform manual backup
+4. Perform manual sync
+5. Restore from a backup
+6. View configured instances
+7. Restore releases from history
+8. Exit
 
-#### filters (optional, NOT TESTED YET!)
+### Running the Scheduler
 
-- `quality_profiles`: a list of quality profile IDs to include
-- `root_folders`: list of root folder paths to include
-- `tags`: list of tags to filter by
+To start the scheduler for automated operations:
 
-## installations
+```bash
+python -m src.arrranger_scheduler
+```
 
-### directory Structure
+## Configuration
 
-- `config/` - contains configuration files
-- `data/` - contains the SQLite database
-- both directories must be readable and writable by the script or the docker container
+The application uses a JSON configuration file (`arrranger_instances.json`) to store instance settings. By default, this file should be in the current working directory.
 
-### local deployment using python
+### Configuration Example
 
-1. clone the repository:
+```json
+{
+  "radarr-main": {
+    "url": "http://radarr:7878",
+    "api_key": "your-api-key",
+    "type": "radarr",
+    "backup": {
+      "enabled": true,
+      "schedule": {
+        "type": "cron",
+        "cron": "0 3 * * *"
+      }
+    }
+  },
+  "radarr-backup": {
+    "url": "http://radarr-backup:7878",
+    "api_key": "your-backup-api-key",
+    "type": "radarr",
+    "sync": {
+      "parent_instance": "radarr-main",
+      "schedule": {
+        "type": "cron",
+        "cron": "0 4 * * *"
+      }
+    }
+  }
+}
+```
 
-  ```bash
-  git clone https://github.com/lucanori/arrranger.git
-  cd arrranger
-  ```
+See `arrranger_instances.json.example` for a more comprehensive example.
 
-2. install dependencies:
+## Docker Deployment
 
-  ```bash
-  pip3 install -r requirements.txt
-  ```
+### Local Development
 
-3. create your configuration directory and file:
+A Docker Compose file is provided for local development:
 
-  ```bash
-  mkdir -p config
-  cp arrranger_instances.json.example config/arrranger_instances.json
-  ```
+```bash
+docker compose -f docker-compose.local.yml build --no-cache
+docker compose -f docker-compose.local.yml up -d
+```
 
-4. edit `config/arrranger_instances.json` with your instance details
-
-5. run the interactive script:
-
-  ```bash
-  python3 arrranger_sync.py
-  ```
-    - this provides an interactive menu with the following options:
-      1. add a new media server instance
-      2. remove a media server instance
-      3. perform manual backup
-      4. perform manual sync
-      5. restore from backup
-      6. view configured instances
-      7. exit
-
-5. or run the scheduler
-
-  ```bash
-  python3 arrranger_scheduler.py
-  ```
-  - this runs the scheduler that handles:
-    - automatic backups based on the configuration file
-    - automatic synchronization for parent-child instance relationships
-
-### local deployment using Docker
-
-this application can be run locally in a docker container. you can find the local Docker Compose configuration in [docker-compose.local.yml](docker-compose.local.yml).
-
-1. clone the repository:
-
-  ```bash
-  git clone https://github.com/lucanori/arrranger.git
-  cd arrranger
-  ```
-
-2. building the image
-
-  ```bash
-  docker compose -f docker-compose.local.yml build --no-cache
-  ```
-
-3. running the container
-
-  ```bash
-  docker compose -f docker-compose.local.yml up -d
-  ```
-
-### official container deployment using Docker
-
-this will use the configuration defined in [docker-compose.yml](docker-compose.yml)
-
-just add the service to your stack, or copy the docker compose to your folder and run:
+### Production Deployment
 
 ```bash
 docker compose up -d
 ```
 
-## contributing
+## Testing
 
-as this is my first experience with a public repository, i'm still learning a great deal. please keep that in mind when you're contributing
+### Running Tests
 
-1. fork the repository
-2. create your feature branch
-3. commit your changes
-4. push to the branch
-5. create a new pull request
+Tests can be run using pytest:
 
-## license
+```bash
+pytest
+```
 
-this project is licensed under the MIT license - see the [LICENSE](LICENSE) file for details
+### Testing Environment
+
+A Docker Compose file is provided for setting up a testing environment with Radarr and Sonarr instances:
+
+```bash
+cd test
+docker compose -f docker-compose.test.yml up -d
+```
+
+This creates isolated Radarr and Sonarr instances for testing purposes.
+
+## Code Quality
+
+### Linting and Formatting
+
+This project uses Ruff for linting and formatting:
+
+```bash
+# Run linter
+ruff check .
+
+# Apply auto-fixes
+ruff check --fix .
+
+# Format code
+ruff format .
+```
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a new Pull Request
+
+## License
+
+This project is licensed under the GNU General Public License Version 3 - see the [LICENSE](LICENSE) file for details.

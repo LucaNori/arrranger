@@ -13,13 +13,13 @@
 *.DS_Store
 *.ini
 pkg/
-src/
 __pycache__
+*.egg-info
+.venv
 
 *.db
 *.html
 
-/docs
 /data
 /config
 arrranger_instances.json

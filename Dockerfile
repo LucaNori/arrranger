@@ -17,15 +17,18 @@ ENV VIRTUAL_ENV=/app/.venv
 RUN uv venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-RUN git clone --depth 1 https://github.com/lucanori/arrranger.git /app_tmp \
-    && cd /app_tmp \
-    && ARRRANGER_COMMIT_SHA=$(git rev-parse --short HEAD) \
-    && cd / \
-    && mv /app_tmp/* /app/ \
-    && mv /app_tmp/.* /app/ || true \
-    && rm -rf /app_tmp \
-    && cd /app \
-    && echo $ARRRANGER_COMMIT_SHA > /app/ARRRANGER_COMMIT_SHA.txt
+# Copy project files
+COPY pyproject.toml uv.lock /app/
+COPY src/ /app/src/
+COPY main.py /app/
+COPY arrranger_instances.json.example /app/
+
+# Set commit SHA (if provided) or use a default value
+RUN if [ -n "$APP_COMMIT_SHA" ]; then \
+      echo "$APP_COMMIT_SHA" > /app/ARRRANGER_COMMIT_SHA.txt; \
+    else \
+      echo "unknown" > /app/ARRRANGER_COMMIT_SHA.txt; \
+    fi
 
 RUN if [ -n "$APP_COMMIT_SHA" ]; then \
       echo "$APP_COMMIT_SHA" > /tmp/commit_sha; \
@@ -76,4 +79,4 @@ WORKDIR /config
 VOLUME ["/config", "/data"]
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["uv", "run", "arrranger_sync.py"]
+CMD ["uv", "run", "main.py"]
